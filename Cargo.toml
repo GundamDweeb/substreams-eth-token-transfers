@@ -1,25 +1,30 @@
 [package]
-name = "substreams-eth-token-transfers"
-version = "0.4.0"
-description = "Substream Ethereum Token Transfers tracking"
-edition = "2021"
-repository = "https://github.com/streamingfast/substreams-eth-token-transfers"
-license = "Apache-2.0"
+name = "erc1155_SPS"
+version = "0.0.1"
+description = "Substream Powered Subgraph Tracking ERC1155 Data"
 
 [lib]
 name = "substreams"
 crate-type = ["cdylib"]
 
 [dependencies]
-csv = "1.1"
-ethabi = "17"
-hex-literal = "0.3.4"
-num-bigint = "0.4"
+ethabi = "18.0.0"
+hex-literal = "0.4.1"
+bigdecimal = "0.3.0"
 prost = "0.11"
+
+hex = "0.4.3"
+num-bigint = "0.4"
+pad = "0.1"
+thiserror = "1.0.37"
+prost-types = "0.11.9"
+
+
+# Use latest from https://crates.io/crates/substreams
 substreams = "0.5"
+# Use latest from https://crates.io/crates/substreams-ethereum
 substreams-ethereum = "0.9"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+protoc-gen-prost = "0.2.3"
 
 # Required so that ethabi > ethereum-types build correctly under wasm32-unknown-unknown
 [target.wasm32-unknown-unknown.dependencies]

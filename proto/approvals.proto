@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package token.approvals.v1;
+
+message ApprovalForAll {
+  string trx_hash = 1;
+  uint64 log_index = 2;
+  string account = 3;
+  string operator = 4;
+  bool approved = 5;
+}
+
+message Approvals {
+  repeated ApprovalForAll approvals = 1;
+}

@@ -1,14 +1,13 @@
 specVersion: v0.1.0
 package:
-  name: "substreams_eth_token_transfers"
-  version: v0.4.0
-
-imports:
-  sink_files: https://github.com/streamingfast/substreams-sink-files/releases/download/v0.1.0/substreams-sink-files-v0.1.0.spkg
+  name: "erc1155_SPS"
+  version: v1.0.0
 
 protobuf:
   files:
     - transfers.proto
+    - approvals.proto
+    - token.proto
   importPaths:
     - ./proto
 
@@ -24,20 +23,31 @@ modules:
     inputs:
       - source: sf.ethereum.type.v2.Block
     output:
-      type: proto:eth.token.transfers.v1.Transfers
+      type: proto:token.transfers.v1.Transfers
 
-  - name: jsonl_out
+  - name: map_single_transfers
     kind: map
     initialBlock: 0
     inputs:
       - source: sf.ethereum.type.v2.Block
     output:
-      type: proto:substreams.sink.files.v1.Lines
-
-  - name: csv_out
+      type: proto:token.transfers.v1.Transfers
+  
+  - name: map_batch_transfers
     kind: map
     initialBlock: 0
     inputs:
       - source: sf.ethereum.type.v2.Block
     output:
-      type: proto:substreams.sink.files.v1.Lines
+      type: proto:token.transfers.v1.BatchTransfers
+  
+  - name: map_approvals
+    kind: map
+    initialBlock: 0
+    inputs:
+      - source: sf.ethereum.type.v2.Block
+    output:
+      type: proto:token.approvals.v1.Approvals
+
+
+

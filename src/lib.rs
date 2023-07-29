@@ -1,10 +1,13 @@
 mod abi;
 mod pb;
 
-use pb::sinkfiles::Lines;
-use pb::transfers::transfer::Schema;
-use pb::transfers::Transfer;
+
 use pb::transfers::Transfers;
+use pb::approvals::Approvals;
+use pb::approvals::ApprovalForAll;
+use pb::transfers::TransferBatch;
+use pb::transfers::BatchTransfers;
+use pb::token::Token;
 
 use substreams::log;
 use substreams::scalar::BigInt;
@@ -12,10 +15,9 @@ use substreams::Hex;
 use substreams_ethereum::pb::eth::v2 as eth;
 use substreams_ethereum::Event;
 
-use abi::erc1155::events::TransferBatch as ERC1155TransferBatchEvent;
-use abi::erc1155::events::TransferSingle as ERC1155TransferSingleEvent;
-use abi::erc20::events::Transfer as ERC20TransferEvent;
-use abi::erc721::events::Transfer as ERC721TransferEvent;
+use abi::erc1155::events::TransferBatch as TransferBatchEvent;
+use abi::erc1155::events::TransferSingle as TransferSingleEvent;
+use abi::erc1155::events::ApprovalForAll as ApprovalForAllEvent;
 
 substreams_ethereum::init!();
 
@@ -26,43 +28,65 @@ fn map_transfers(blk: eth::Block) -> Result<Transfers, substreams::errors::Error
         transfers: get_transfers(&blk).collect(),
     })
 }
-
-/// Extracts transfers events from the contract(s)
 #[substreams::handlers::map]
-fn jsonl_out(blk: eth::Block) -> Result<Lines, substreams::errors::Error> {
-    Ok(Lines {
-        lines: get_transfers(&blk)
-            .map(|trx| serde_json::to_string(&trx).unwrap())
-            .collect(),
+fn map_single_transfers(blk: eth::Block) -> Result<Transfers, substreams::errors::Error> {
+    Ok(Transfers {
+        transfers: get_single_transfers(&blk).collect(),
+    })
+}
+#[substreams::handlers::map]
+fn map_batch_transfers(blk: eth::Block) -> Result<BatchTransfers, substreams::errors::Error> {
+    Ok(BatchTransfers {
+        transfers: get_batch_transfers(&blk).collect(),
+    })
+}
+#[substreams::handlers::map]
+fn map_approvals(blk: eth::Block) -> Result<Approvals, substreams::errors::Error> {
+    Ok(Approvals {
+        approvals: get_approvals(&blk).collect(),
     })
 }
 
-/// Extracts transfers events from the contract(s)
-#[substreams::handlers::map]
-fn csv_out(blk: eth::Block) -> Result<Lines, substreams::errors::Error> {
-    Ok(Lines {
-        lines: get_transfers(&blk).map(|trx| trx.to_csv()).collect(),
+
+fn get_batch_transfers<'a>(blk: &'a eth::Block) -> impl Iterator<Item = TransferBatch> + 'a {
+    blk.receipts().flat_map(|receipt| {
+        let hash = &receipt.transaction.hash;
+
+        receipt.receipt.logs.iter().flat_map(|log| {
+            if let Some(event) = TransferBatchEvent::match_and_decode(log) {
+                return new_erc1155_batch_transfer_simple(hash, log.block_index, event);
+            }
+
+            vec![]
+        })
     })
 }
+
+fn get_single_transfers<'a>(blk: &'a eth::Block) -> impl Iterator<Item = TransferSingle> + 'a {
+    blk.receipts().flat_map(|receipt| {
+        let hash = &receipt.transaction.hash;
+
+        receipt.receipt.logs.iter().flat_map(|log| {
+            if let Some(event) = TransferSingleEvent::match_and_decode(log) {
+                return vec![new_erc1155_single_transfer(hash, log.block_index, event)];
+            }
+
+            vec![]
+        })
+    })
+}
+
 
 fn get_transfers<'a>(blk: &'a eth::Block) -> impl Iterator<Item = Transfer> + 'a {
     blk.receipts().flat_map(|receipt| {
         let hash = &receipt.transaction.hash;
 
         receipt.receipt.logs.iter().flat_map(|log| {
-            if let Some(event) = ERC20TransferEvent::match_and_decode(log) {
-                return vec![new_erc20_transfer(hash, log.block_index, event)];
-            }
-
-            if let Some(event) = ERC721TransferEvent::match_and_decode(log) {
-                return vec![new_erc721_transfer(hash, log.block_index, event)];
-            }
-
-            if let Some(event) = ERC1155TransferSingleEvent::match_and_decode(log) {
+            if let Some(event) = TransferSingleEvent::match_and_decode(log) {
                 return vec![new_erc1155_single_transfer(hash, log.block_index, event)];
             }
 
-            if let Some(event) = ERC1155TransferBatchEvent::match_and_decode(log) {
+            if let Some(event) = TransferBatchEvent::match_and_decode(log) {
                 return new_erc1155_batch_transfer(hash, log.block_index, event);
             }
 
@@ -71,39 +95,40 @@ fn get_transfers<'a>(blk: &'a eth::Block) -> impl Iterator<Item = Transfer> + 'a
     })
 }
 
-fn new_erc20_transfer(hash: &[u8], log_index: u32, event: ERC20TransferEvent) -> Transfer {
-    Transfer {
-        schema: schema_to_string(Schema::Erc20),
-        from: Hex(&event.from).to_string(),
-        to: Hex(&event.to).to_string(),
-        quantity: event.value.to_string(),
+fn get_approvals<'a>(blk: &'a eth::Block) -> impl Iterator<Item = ApprovalForAll> + 'a {
+    blk.receipts().flat_map(|receipt| {
+        let hash = &receipt.transaction.hash;
+
+        receipt.receipt.logs.iter().flat_map(|log| {
+            if let Some(event) = ApprovalForAllEvent::match_and_decode(log) {
+                return vec![new_erc1155_approval(hash, log.block_index, event)];
+            }
+            vec![]
+        })
+    })
+}
+
+
+fn new_erc1155_approval(
+    hash: &[u8],
+    log_index: u32,
+    event: ApprovalForAllEvent,
+) -> ApprovalForAll {
+    ApprovalForAll {
         trx_hash: Hex(hash).to_string(),
         log_index: log_index as u64,
-
-        operator: "".to_string(),
-        token_id: "".to_string(),
+        account: Hex(event.account).to_string(),
+        operator: Hex(event.operator).to_string(),
+        approved: event.approved
     }
 }
 
-fn new_erc721_transfer(hash: &[u8], log_index: u32, event: ERC721TransferEvent) -> Transfer {
-    Transfer {
-        schema: schema_to_string(Schema::Erc721),
-        from: Hex(&event.from).to_string(),
-        to: Hex(&event.to).to_string(),
-        quantity: "1".to_string(),
-        trx_hash: Hex(hash).to_string(),
-        log_index: log_index as u64,
-        token_id: event.token_id.to_string(),
-
-        operator: "".to_string(),
-    }
-}
 
 fn new_erc1155_single_transfer(
     hash: &[u8],
     log_index: u32,
-    event: ERC1155TransferSingleEvent,
-) -> Transfer {
+    event: TransferSingleEvent,
+) -> TransferSingle {
     new_erc1155_transfer(
         hash,
         log_index,
@@ -115,13 +140,46 @@ fn new_erc1155_single_transfer(
     )
 }
 
+fn new_erc1155_batch_transfer_simple(
+    hash: &[u8],
+    log_index: u32,
+    from: &[u8],
+    to: &[u8],
+    token_ids: &[BigInt],
+    quantitys: &[BigInt],
+    operator: &[u8],
+) -> TransferBatch {
+    TransferBatch {
+        from: Hex(from).to_string(),
+        to: Hex(to).to_string(),
+        quantitys:  quantitys
+                        .iter()
+                        .enumerate()
+                        .map(|(i, id)| {
+                            id.to_string();
+                        })
+                        .collect(),
+        trx_hash: Hex(hash).to_string(),
+        log_index: log_index as u64,
+        operator: Hex(operator).to_string(),
+        token_ids: token_ids
+                        .iter()
+                        .enumerate()
+                        .map(|(i, id)| {
+                           id.to_string();
+                        })
+                        .collect(),
+    }
+}
+
+
 fn new_erc1155_batch_transfer(
     hash: &[u8],
     log_index: u32,
-    event: ERC1155TransferBatchEvent,
+    event: TransferBatchEvent,
 ) -> Vec<Transfer> {
     if event.ids.len() != event.values.len() {
-        log::info!("There is a different count for ids ({}) and values ({}) in transaction {} for log at block index {}, ERC1155 spec says lenght should match, ignoring the log completely for now",
+        log::info!("There is a different count for ids ({}) and values ({}) in transaction {} for log at block index {}, ERC1155 spec says length should match, ignoring the log completely for now",
             event.ids.len(),
             event.values.len(),
             Hex(&hash).to_string(),
@@ -151,6 +209,8 @@ fn new_erc1155_batch_transfer(
         .collect()
 }
 
+
+
 fn new_erc1155_transfer(
     hash: &[u8],
     log_index: u32,
@@ -161,7 +221,6 @@ fn new_erc1155_transfer(
     operator: &[u8],
 ) -> Transfer {
     Transfer {
-        schema: schema_to_string(Schema::Erc1155),
         from: Hex(from).to_string(),
         to: Hex(to).to_string(),
         quantity: quantity.to_string(),
@@ -172,11 +231,4 @@ fn new_erc1155_transfer(
     }
 }
 
-fn schema_to_string(schema: Schema) -> String {
-    match schema {
-        Schema::Erc20 => "erc20",
-        Schema::Erc721 => "erc721",
-        Schema::Erc1155 => "erc1155",
-    }
-    .to_string()
-}
+//Stores

@@ -1,0 +1,40 @@
+type Account @entity {
+  id: ID!
+  holdings: BigInt!
+}
+
+type Balance @entity {
+  id: ID! #tokenAddress-tokenid
+  amount: BigInt!
+}
+
+type Transfer @entity(immutable: true) {
+  id: ID!
+  tokenId: BigInt!
+  sender: Account
+  receiver: Account!
+  amount: String!
+  timestamp: BigInt!
+  txHash: String!
+  blockNumber: BigInt!
+  logIndex: BigInt!
+}
+
+type Approval @entity(immutable: true) {
+  id: ID!
+  tokenId: BigInt!
+  operator: String!
+  account: Account!
+  approved: Boolean!
+  timestamp: BigInt!
+  txHash: String!
+  blockNumber: BigInt!
+  logIndex: BigInt!
+}
+
+type Token @entity {
+  id: ID!
+  name: String!
+  address: String!
+  symbol: String!
+}
